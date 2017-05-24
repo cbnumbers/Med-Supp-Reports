@@ -1,0 +1,175 @@
+---
+title: "Medicare Supplement Applications and Claims Entered"
+author: "Christopher Boutte"
+date: "May 22, 2017"
+output:
+  html_document: 
+      css: mystyle.css
+---
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(RODBC)
+library(stringr)
+library(lubridate)
+library(knitr)
+
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r Claims Entered Query, echo=FALSE, include=FALSE}
+## Claims Query and data cleaning
+
+## database name goes here
+dsn.name <- "LPAR01"
+
+## username used to log in
+user.name <- "CBOUTTE"
+
+## password used with above username
+pw.name <-"Lucky096"
+
+con1 <- odbcConnect(dsn=dsn.name, uid = user.name, pwd = pw.name)
+
+## test connection with this line "sqlTables(con1)"
+
+## write SQL query here , HLPMCLM.CLOPTM
+
+dly_claims_ent <- sqlQuery(con1, "SELECT T1.CLNO03, T1.CLNO06, T1.CLBUSRID, T1.CLOPDT, T1.CLOPTM 
+                   FROM INSDLIB.HLPMCLM AS T1
+                   WHERE T1.CLNO02 IN ('135', '142', '163') AND T1.CLOPDT = 20170523")
+
+## create hour factor from time field
+
+dly_claims_ent_2 <- dly_claims_ent %>%
+  mutate(time1 = str_sub(dly_claims_ent$CLOPTM, 1, 1), time2 = str_sub(dly_claims_ent$CLOPTM, 2, 2))
+
+hour_ent_clm <- if_else(dly_claims_ent_2$time1 == "1", paste(dly_claims_ent_2$time1, dly_claims_ent_2$time2, sep = ""), 
+                        dly_claims_ent_2$time1)
+
+hour_ent_fac_clm <- factor(hour_ent_clm, levels = c("5","6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"))
+
+## add in hour, plot, summary tables
+
+dly_claims_ent_3 <- dly_claims_ent_2 %>%
+  mutate(hour_claim_entered = hour_ent_fac_clm)
+
+summary_table_claims <- dly_claims_ent_3 %>%
+  group_by(CLBUSRID, hour_claim_entered) %>%
+  count()
+summary_table_claims_final <- summary_table_claims %>%
+  spread(CLBUSRID, "n")
+```
+
+
+```{r Applications Entered Query, echo=FALSE, include= FALSE}
+## Applications Query and Data Cleaning
+
+## database name goes here
+dsn.name <- "LPAR01"
+
+## username used to log in
+user.name <- "CBOUTTE"
+
+## password used with above username
+pw.name <-"Lucky096"
+
+## define connection variable here
+con1 <- odbcConnect(dsn=dsn.name, uid = user.name, pwd = pw.name)
+
+## can test connection first with this line: sqlTables(con1)
+
+## create dataset using SQL query. 
+apps_entered <- sqlQuery(con1, "SELECT MKLMAPP01.MBLOCK, MKLMAPP01.MAPPLNO, MKLMAPP01.MSTATUS, MKLMAPP01.MRPLINSIND, MKLMAPP01.MISSUEST,                                 MKPOLADMP.MSMODECD,MKLMAPP01.MISSUEDT, MKLMAPP01.MAPPRCVDT, MKLMAPP01.MAPPENTRDT, MKLMAPP01.MAPPSIGDT,                                           POLPRHSP.PHUSRDT, POLPRHSP.PHUSRTM, POLPRHSP.PHUSRID, MKLMAPP01.MOTHERIND, MKPOLADMP.MSFLEX8
+                        FROM LOADLIB.MKLMAPP01 MKLMAPP01 INNER JOIN INSDLIB.POLPRHSP POLPRHSP ON
+                        (MKLMAPP01.MAPPLNO=POLPRHSP.PHAPPLNO) 
+                        INNER JOIN LOADLIB.MKPOLADMP MKPOLADMP ON (MKLMAPP01.MAPPLNO=MKPOLADMP.MMAPPLNO)
+                        WHERE MKLMAPP01.MAPPENTRDT=20170523 AND MKLMAPP01.MBLOCK IN ('135', '142', '163')")
+
+User_Date <- ymd(apps_entered$PHUSRDT)
+
+## create hour entered, filter, select
+
+apps_entered_2 <- apps_entered %>%
+  mutate(time1 = str_sub(apps_entered$PHUSRTM, 1, 1), time2 = str_sub(apps_entered$PHUSRTM, 2, 2), Date = User_Date)
+
+hour_ent <- if_else(apps_entered_2$time1 == "1", paste(apps_entered_2$time1, apps_entered_2$time2, sep = ""), apps_entered_2$time1)
+
+hour_ent_fac <- factor(hour_ent, levels = c("7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17"))
+
+apps_entered_3 <- apps_entered_2 %>%
+  mutate(hour_entered = hour_ent_fac) %>%
+  filter(MOTHERIND == "N") %>%
+  select(MBLOCK, MAPPLNO, MISSUEST, MSMODECD, PHUSRTM, PHUSRID, hour_entered, Date)
+
+## group by app# and user, arrange by time entered, rank by time entered and select rank 1
+
+apps_entered_4 <- apps_entered_3 %>%
+  group_by(MAPPLNO) %>%
+  mutate(rank = min_rank(PHUSRTM)) %>%
+  filter(rank == "1")
+
+## plot and summarize
+
+summary_table <- apps_entered_4 %>%
+  group_by(PHUSRID, hour_entered) %>%
+  count()
+
+summary_table_final <- summary_table %>%
+  spread(PHUSRID, "n")
+
+write_csv(apps_entered_4, "Daily_Apps_Entered_20170523.csv")
+```
+----
+
+###Claims Entered
+
+```{r Claims Entered Plot, echo = FALSE, error=FALSE, warning=FALSE}
+ggplot(dly_claims_ent_3, aes(x = CLBUSRID, fill = hour_ent_fac_clm)) +
+  geom_bar() +
+  labs(title = "Daily Med Supp Claims Entered by User Per Hour", x = "User ID", y = "Claims Entered", fill = "Hour Entered") +
+  theme(axis.text.x = element_text(angle = -30, vjust = 1, hjust = 0))
+```
+
+
+***
+#####The above graph shows the claims entered by each user with each color representing the hour these claims are entered.
+
+----
+
+###Claims Entered per User by Claim Type
+
+
+```{r Claims Entered Chart, echo = FALSE, results='asis',error=FALSE, warning=FALSE}
+##creates custom CSS file in directory for color formatting etc.
+writeLines("td, th { padding : 12px } th { background-color : grey ; color : white; border : 1px solid white; } td { color : black ; border : 1px solid grey }", con = "mystyle.css")
+
+kable(summary_table_claims_final, format = "html")
+```
+
+***
+
+### Applications Entered
+
+```{r Apps Entered Plot,echo=FALSE, error=FALSE, warning=FALSE}
+ggplot(apps_entered_4, aes(x = PHUSRID, fill = hour_entered)) +
+  geom_bar() +
+  labs(title = "Daily Applications Entered Per Hour Med Supp", x = "Data Enterer", y = "Applications Entered", fill = "Hour Entered")
+```
+
+----
+
+#### Applications Entered per User
+```{r Apps Entered Chart, echo=FALSE, results='asis', error=FALSE, warning=FALSE}
+summary_table_final <- summary_table %>%
+  spread(PHUSRID, "n")
+
+##creates custom CSS file in directory for color formatting etc.
+writeLines("td, th { padding : 6px } th { background-color : grey ; color : white; border : 1px solid white; } td { color : black ; border : 1px solid grey }", con = "mystyle.css")
+
+kable(summary_table_final, format = "html")
+```
+
+

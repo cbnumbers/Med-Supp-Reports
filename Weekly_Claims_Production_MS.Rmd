@@ -1,0 +1,163 @@
+---
+title: "Med Supp Weekly Claims Processed"
+author: "Christopher Boutte"
+date: "Week Ending May 19, 2017"
+output:
+  html_document: 
+      css: mystyle.css
+  
+---
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(RODBC)
+library(stringr)
+library(lubridate)
+library(knitr)
+library(scales)
+
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r Claims Processed Query and Cleaning, echo=FALSE, include=FALSE}
+
+## Pull in data from database.  
+
+## database name goes here
+dsn.name <- "LPAR01"
+
+## username used to log in
+user.name <- "CBOUTTE"
+
+## password used with above username
+pw.name <-"Lucky096"
+
+con1 <- odbcConnect(dsn=dsn.name, uid = user.name, pwd = pw.name)
+
+wklyclmsproc <- sqlQuery(con1,"SELECT CLNO06, CLNO03, CLCD02, RTRIM(CLBUSRID) AS USERID, CLOPDT, CLOPTM, LEFT(CLNO06,1) AS UHE
+                             FROM INSDLIB.MLPTLIN AS T1
+                             WHERE T1.CLNO02 IN ('135', '142', '163', '120', '121', '122') AND T1.CLCD02 IN ('9', 'P') 
+                             AND T1.CLNO06 NOT LIKE ('%-%')
+                             AND T1.CLOPDT >= 20170513 AND T1.CLOPDT <= 20170519")
+
+## new columns and filter
+
+claimtype2 <- sub("U", "UB", wklyclmsproc$UHE)
+claimtype3 <- sub("H", "HCFA", claimtype2)
+claimtype4 <- sub("E", "Electronic", claimtype3)
+
+wklyclmsproc_unique <- wklyclmsproc %>% 
+  mutate(Date = ymd(CLOPDT), ClaimType = claimtype4, ClaimPol = paste(CLNO06,CLNO03,sep = "-")) %>% 
+  group_by(ClaimPol) %>%
+  mutate(rank = row_number(CLOPDT)) %>%
+  filter(rank == "1", USERID != "LBLAKEY")
+
+wklyclmsproc_noauto <- wklyclmsproc %>% 
+  mutate(Date = ymd(CLOPDT), ClaimType = claimtype4, ClaimPol = paste(CLNO06,CLNO03,sep = "-")) %>% 
+  group_by(ClaimPol) %>%
+  mutate(rank = row_number(CLOPDT)) %>%
+  filter(rank == "1", USERID != "LBLAKEY", USERID != "OPLOA", USERID != "RPEMBLE", USERID != "JDW0")
+
+
+
+U_Claims <- wklyclmsproc_unique %>%
+  filter(UHE == "U") %>%
+  group_by(Date, USERID) %>%
+  summarise(n()) %>%
+  spread(USERID,"n()") 
+  
+H_Claims <- wklyclmsproc_unique %>%
+  filter(UHE == "H") %>%
+  group_by(Date, USERID) %>%
+  summarise(n()) %>%
+  spread(USERID,"n()") 
+ 
+E_Claims <- wklyclmsproc_unique %>%
+  filter(UHE == "E") %>%
+  group_by(Date, USERID) %>%
+  summarise(n()) %>%
+  spread(USERID,"n()") 
+
+User_Totals <- wklyclmsproc_unique %>%
+  group_by(Date, USERID) %>%
+  summarise(n()) %>%
+  spread(USERID,"n()") 
+  
+Totals <- wklyclmsproc_unique %>%
+  group_by(Date, ClaimType) %>%
+  summarise(n()) %>%
+  spread(ClaimType, "n()") %>%
+  mutate(Total = sum(2, Electronic, HCFA, UB))
+
+Total_processed <- sum(Totals$Total)
+
+```
+
+***
+#####Total Claims Processed: `r comma_format()(Total_processed) `
+
+
+###Claims Processed by Day 
+
+```{r Claims by Hour Plot, echo = FALSE, error=FALSE, warning=FALSE}
+ggplot(wklyclmsproc_noauto, aes(x = USERID, fill = UHE)) + 
+  geom_bar() + 
+  labs(title = "Weekly Claims Processed Per User", y = "Claims Processed", x = "Processor", fill = "Claim Type") +
+  theme(axis.text.x = element_text(angle = -30, vjust = 1, hjust = 0))
+```
+
+***
+
+###Claims Processed by Claim Type
+
+```{r Claims by Type Plot, echo = FALSE, error=FALSE, warning=FALSE}
+ggplot(wklyclmsproc_unique, aes(x = UHE)) + 
+  geom_bar(fill = "orange") + 
+  labs(title = "Weekly Claims Processed", y = "Claims Processed", x = "Claim Type") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0))
+```
+
+
+***
+
+###Claims Processed per User by Claim Type
+
+#####U Claims
+
+```{r Claims Processed U Chart, echo = FALSE, results='asis',error=FALSE, warning=FALSE}
+##creates custom CSS file in directory for color formatting etc.
+writeLines("td, th { padding : 12px } th { background-color : grey ; color : white; border : 1px solid white; } td { color : black ; border : 1px solid grey }", con = "mystyle.css")
+
+kable(U_Claims, format = "html")
+
+
+```
+
+***
+#####H Claims
+
+```{r Claims Processed H Chart, echo = FALSE, results='asis',error=FALSE, warning=FALSE}
+##creates custom CSS file in directory for color formatting etc.
+writeLines("td, th { padding : 12px } th { background-color : grey ; color : white; border : 1px solid white; } td { color : black ; border : 1px solid grey }", con = "mystyle.css")
+
+
+kable(H_Claims, format = "html")
+
+
+```
+
+***
+#####E Claims
+
+```{r Claims Processed E Chart, echo = FALSE, results='asis',error=FALSE, warning=FALSE}
+##creates custom CSS file in directory for color formatting etc.
+writeLines("td, th { padding : 12px } th { background-color : grey ; color : white; border : 1px solid white; } td { color : black ; border : 1px solid grey }", con = "mystyle.css")
+
+
+kable(E_Claims, format = "html")
+
+```
+
+***

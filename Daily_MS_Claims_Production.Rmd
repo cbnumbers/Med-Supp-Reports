@@ -1,0 +1,106 @@
+---
+title: "MS Daily Claims Processed"
+author: "Christopher Boutte"
+date: "May 22, 2017"
+output:
+  html_document: 
+      css: mystyle.css
+  
+---
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(RODBC)
+library(stringr)
+library(lubridate)
+library(knitr)
+
+
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r Claims Processed Query and Cleaning, echo=FALSE, include=FALSE}
+
+## Pull in data from database.  
+
+## database name goes here
+dsn.name <- "LPAR01"
+
+## username used to log in
+user.name <- "CBOUTTE"
+
+## password used with above username
+pw.name <-"Lucky096"
+
+con1 <- odbcConnect(dsn=dsn.name, uid = user.name, pwd = pw.name)
+
+dlyclmsproc <- sqlQuery(con1, "SELECT CLNO06, CLNO03, CLCD02, RTRIM(CLBUSRID) AS USERID, CLOPDT, CLOPTM, LEFT(CLNO06,1) AS UHE
+                              FROM INSDLIB.MLPTLIN AS T1
+                              WHERE T1.CLNO02 IN ('135', '142', '163', '120', '121', '122') AND 
+                              T1.CLCD02 IN ('9', 'M', 'B', 'H', 'W', 'P') AND
+                              T1.CLNO06 NOT LIKE ('%-%') AND T1.CLOPDT = 20170522")
+
+## new columns and filter
+
+claimtype2 <- sub("U", "UB", dlyclmsproc$UHE)
+claimtype3 <- sub("H", "HCFA", claimtype2)
+claimtype4 <- sub("E", "Electronic", claimtype3)
+
+dlyclmsproc_2 <- dlyclmsproc %>% 
+  mutate(Hour = paste(str_sub(CLOPTM + 10000,2,3)), ClaimType = claimtype4, ClaimPol = paste(CLNO06,CLNO03,sep = "-")) %>% 
+  group_by(ClaimPol) %>%
+  mutate(rank = row_number(CLOPDT)) %>%
+  filter(rank == "1", USERID != "LBLAKEY", USERID != "LDISILVA", USERID != "JLIN", USERID != "JDW0")
+
+## removed automated users here as to not display them in the plots but will still include them in summary tables
+
+dlyclmsproc_3 <- dlyclmsproc_2 %>%
+  filter(USERID != "RPEMBLE", USERID!= "OPLOA")
+
+## summary tables
+
+summarytable <- group_by(dlyclmsproc_3, USERID, ClaimType) %>%
+  summarise(n())
+
+summarytablefinal <- spread(summarytable, ClaimType, "n()")
+
+```
+
+***
+
+###Claims Processed by Hour 
+
+```{r Claims by Hour Plot, echo = FALSE, error=FALSE, warning=FALSE}
+ggplot(dlyclmsproc_3, aes(x = USERID, fill = dlyclmsproc_3$Hour)) + 
+  geom_bar() + 
+  labs(title = "Daily Claims Processed Per User", y = "Claims Processed", x = "Processor", fill = "Hour Processed") +
+  theme(axis.text.x = element_text(angle = -30, vjust = 1, hjust = 0))
+```
+
+***
+
+###Claims Processed by Claim Type
+
+```{r Claims by Type Plot, echo = FALSE, error=FALSE, warning=FALSE}
+ggplot(dlyclmsproc_3, aes(x = USERID, fill = dlyclmsproc_3$ClaimType)) + 
+  geom_bar() + 
+  labs(title = "Daily Claims Processed Per User", y = "Claims Processed", x = "Processor", fill = "Claim Type") +
+  theme(axis.text.x = element_text(angle = -30, vjust = 1, hjust = 0))
+```
+
+
+***
+
+###Claims Entered per User by Claim Type
+
+```{r Claims Entered Chart, echo = FALSE, results='asis',error=FALSE, warning=FALSE}
+##creates custom CSS file in directory for color formatting etc.
+writeLines("td, th { padding : 12px } th { background-color : grey ; color : white; border : 1px solid white; } td { color : black ; border : 1px solid grey }", con = "mystyle.css")
+
+kable(summarytablefinal, format = "html")
+```
+
+***
+***
