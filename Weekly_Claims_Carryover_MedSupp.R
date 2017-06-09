@@ -30,12 +30,12 @@ wklyclmsrec <- sqlQuery(con1,"SELECT G1.*
                              (CLCC16*1000000+CLYY16*10000+CLMM16*100+CLDD16) AS RECDATE
                              FROM INSDLIB.MLPMCLM AS T1) AS G1
                              WHERE G1.CLNO02 IN ('135', '142', '163', '120', '121', '122') AND
-                             G1.RECDATE BETWEEN 20170513 AND 20170519")
+                             G1.RECDATE BETWEEN 20170529 AND 20170602")
 
 wklyclmsproc <- sqlQuery(con1,"SELECT CLNO06, CLNO03, CLCD02, RTRIM(CLBUSRID) AS USERID, CLOPDT, CLOPTM, LEFT(CLNO06,1) AS UHE
                              FROM INSDLIB.MLPTLIN AS T1
                          WHERE T1.CLNO02 IN ('135', '142', '163', '120', '121', '122') AND T1.CLCD02 IN ('9', 'P') AND T1.CLNO06 NOT LIKE ('%-%')
-                         AND T1.CLOPDT BETWEEN 20170513 AND 20170519")
+                         AND T1.CLOPDT BETWEEN 20170529 AND 20170602")
 
 #write_csv(wklyclmsrec,"wklyclmsrec.csv")
 #write_csv(wklyclmsproc,"wklyclmsproc.csv")
@@ -90,32 +90,11 @@ Total_Processed <- Total_Processed_Date %>%
 ## Get total carryover for the week
 #works if the tables are equal in size
 #Days <- c("Saturday", "Monday", "Tuesday", "Wednsday", "Thursday", "Friday")
-Days <- c("Monday", "Tuesday", "Wednsday", "Thursday", "Friday")
+Days <- c("Tuesday", "Wednsday", "Thursday", "Friday")
 Carryover <- data.frame(Total_Processed[,-1] - Total_Received[,-1], row.names= Days)
 
 
 ## removed automated users here as to not display them in the plots but will still include them in summary tables
-
-## summary tables
-
-summarytable <- group_by(dlyclmsproc_2, USERID, ClaimType) %>%
-  summarise(n())
-
-summarytablefinal <- spread(summarytable, ClaimType, "n()")
-
-## plots 
-dlyclmsproc_3 <- dlyclmsproc_2 %>%
-  filter(USERID != "RPEMBLE", USERID!= "OPLOA")
-
-ggplot(dlyclmsproc_3, aes(x = USERID, fill = dlyclmsproc_3$Hour)) + 
-  geom_bar() + 
-  labs(title = "Daily Claims Processed Per User", y = "Claims Processed", x = "Processor", fill = "Hour Processed") +
-  theme(axis.text.x = element_text(angle = -30, vjust = 1, hjust = 0))
-
-ggplot(dlyclmsproc_3, aes(x = USERID, fill = dlyclmsproc_3$ClaimType)) + 
-  geom_bar() + 
-  labs(title = "Daily Claims Processed Per User", y = "Claims Processed", x = "Processor", fill = "Claim Type") +
-  theme(axis.text.x = element_text(angle = -30, vjust = 1, hjust = 0))
 
 
 
